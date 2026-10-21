@@ -13,1174 +13,496 @@ jobs:
     - name: Criar Todos os Arquivos e Pastas do Projeto
       run: |
         python3 - << 'EOF'
-        import os, zipfile
+        import os, zipfile, textwrap
 
         files = {
-            "settings.gradle.kts": """pluginManagement {
-            repositories {
-                google()
-                mavenCentral()
-                gradlePluginPortal()
+            "settings.gradle.kts": """
+            pluginManagement {
+                repositories {
+                    google()
+                    mavenCentral()
+                    gradlePluginPortal()
+                }
             }
-        }
-        dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories {
-                google()
-                mavenCentral()
+            dependencyResolutionManagement {
+                repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+                repositories {
+                    google()
+                    mavenCentral()
+                }
             }
-        }
-        rootProject.name = "SF2Player"
-        include(":app")
-        """,
+            rootProject.name = "SF2Player"
+            include(":app")
+            """,
 
-            "build.gradle.kts": """plugins {
-            id("com.android.application") version "8.7.3" apply false
-            id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-            id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
-        }
-        """,
+            "build.gradle.kts": """
+            plugins {
+                id("com.android.application") version "8.7.3" apply false
+                id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+                id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+            }
+            """,
 
-            "gradle.properties": """org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
-        android.useAndroidX=true
-        android.nonTransitiveRClass=true
-        """,
+            "gradle.properties": """
+            org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+            android.useAndroidX=true
+            android.nonTransitiveRClass=true
+            """,
 
-            "app/build.gradle.kts": """plugins {
-            id("com.android.application")
-            id("org.jetbrains.kotlin.android")
-            id("org.jetbrains.kotlin.plugin.compose")
-        }
+            "app/build.gradle.kts": """
+            plugins {
+                id("com.android.application")
+                id("org.jetbrains.kotlin.android")
+                id("org.jetbrains.kotlin.plugin.compose")
+            }
 
-        android {
-            namespace = "com.mysf2.android"
-            compileSdk = 35
+            android {
+                namespace = "com.mysf2.android"
+                compileSdk = 35
 
-            defaultConfig {
-                applicationId = "com.mysf2.android"
-                minSdk = 26
-                targetSdk = 35
-                versionCode = 1
-                versionName = "1.0.0"
+                defaultConfig {
+                    applicationId = "com.mysf2.android"
+                    minSdk = 26
+                    targetSdk = 35
+                    versionCode = 1
+                    versionName = "1.0.0"
 
-                ndk {
-                    abiFilters.addAll(listOf("arm64-v8a"))
+                    ndk {
+                        abiFilters.addAll(listOf("arm64-v8a"))
+                    }
+
+                    externalNativeBuild {
+                        cmake {
+                            cppFlags("-std=c++17 -O3 -fexceptions -frtti")
+                            arguments("-DANDROID_STL=c++_shared")
+                        }
+                    }
+                }
+
+                buildTypes {
+                    release {
+                        isMinifyEnabled = false
+                        signingConfig = signingConfigs.getByName("debug")
+                    }
+                    debug {
+                        isDebuggable = true
+                    }
+                }
+
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_17
+                    targetCompatibility = JavaVersion.VERSION_17
+                }
+
+                kotlinOptions {
+                    jvmTarget = "17"
+                }
+
+                buildFeatures {
+                    compose = true
+                    prefab = true
                 }
 
                 externalNativeBuild {
                     cmake {
-                        cppFlags("-std=c++17 -O3 -fexceptions -frtti")
-                        arguments("-DANDROID_STL=c++_shared")
+                        path = file("CMakeLists.txt")
+                        version = "3.22.1"
+                    }
+                }
+
+                packaging {
+                    resources {
+                        excludes += "/META-INF/{AL2.0,LGPL2.1}"
                     }
                 }
             }
 
-            buildTypes {
-                release {
-                    isMinifyEnabled = false
-                    signingConfig = signingConfigs.getByName("debug")
+            dependencies {
+                implementation("androidx.core:core-ktx:1.15.0")
+                implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+                implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+                implementation("androidx.activity:activity-compose:1.10.1")
+
+                val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+                implementation(composeBom)
+                implementation("androidx.compose.ui:ui")
+                implementation("androidx.compose.ui:ui-graphics")
+                implementation("androidx.compose.ui:ui-tooling-preview")
+                implementation("androidx.compose.material3:material3")
+                implementation("androidx.compose.material:material-icons-extended")
+
+                implementation("google.oboe:oboe:1.9.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+            }
+            """,
+
+            "app/CMakeLists.txt": """
+            cmake_minimum_required(VERSION 3.22.1)
+            project(sf2_player_engine LANGUAGES C CXX)
+
+            set(CMAKE_CXX_STANDARD 17)
+            set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+            find_package(oboe REQUIRED CONFIG)
+
+            include(FetchContent)
+            FetchContent_Declare(
+                fluidlite
+                GIT_REPOSITORY https://github.com/divideconcept/FluidLite.git
+                GIT_TAG master
+            )
+            FetchContent_MakeAvailable(fluidlite)
+
+            add_library(sf2engine SHARED
+                src/main/cpp/sf2_engine.cpp
+                src/main/cpp/jni_bridge.cpp
+            )
+
+            target_include_directories(sf2engine PRIVATE
+                ${fluidlite_SOURCE_DIR}/include
+                src/main/cpp
+            )
+
+            find_library(LOG_LIB log)
+            find_library(OPENSLES_LIB OpenSLES)
+
+            target_link_libraries(sf2engine
+                PRIVATE
+                oboe::oboe
+                fluidlite
+                ${LOG_LIB}
+                ${OPENSLES_LIB}
+            )
+            """,
+
+            "app/src/main/cpp/sf2_engine.h": """
+            #ifndef SF2_ENGINE_H
+            #define SF2_ENGINE_H
+
+            #include <oboe/Oboe.h>
+            #include <fluidlite.h>
+            #include <string>
+            #include <vector>
+            #include <mutex>
+
+            struct PresetInfo {
+                int bank;
+                int program;
+                std::string name;
+            };
+
+            class SF2Engine : public oboe::AudioStreamDataCallback {
+            public:
+                SF2Engine();
+                ~SF2Engine();
+
+                bool startAudio();
+                void stopAudio();
+
+                bool loadSoundFont(const std::string& path);
+                void unloadSoundFont();
+
+                void noteOn(int channel, int key, int velocity);
+                void noteOff(int channel, int key);
+                void selectProgram(int channel, int bank, int program);
+                void setMasterVolume(float volume);
+                void setPolyphony(int polyphony);
+                void allNotesOff();
+
+                std::vector<PresetInfo> getPresets();
+                bool isLoaded() const { return mSoundFontId >= 0; }
+
+                oboe::DataCallbackResult onAudioReady(
+                    oboe::AudioStream *oboeStream,
+                    void *audioData,
+                    int32_t numFrames) override;
+
+            private:
+                std::shared_ptr<oboe::AudioStream> mStream;
+                fluid_settings_t* mSettings{nullptr};
+                fluid_synth_t* mSynth{nullptr};
+                int mSoundFontId{-1};
+
+                int32_t mSampleRate{48000};
+                const int32_t mChannelCount{2};
+
+                std::mutex mSynthMutex;
+                float mMasterVolume{1.0f};
+            };
+
+            #endif
+            """,
+
+            "app/src/main/cpp/sf2_engine.cpp": """
+            #include "sf2_engine.h"
+            #include <android/log.h>
+            #include <cstring>
+
+            #define TAG "SF2EngineNative"
+            #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+            #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+            SF2Engine::SF2Engine() {
+                mSettings = new_fluid_settings();
+                fluid_settings_setnum(mSettings, "synth.sample-rate", 48000.0);
+                fluid_settings_setint(mSettings, "synth.polyphony", 64);
+                mSynth = new_fluid_synth(mSettings);
+            }
+
+            SF2Engine::~SF2Engine() {
+                stopAudio();
+                if (mSynth) {
+                    delete_fluid_synth(mSynth);
+                    mSynth = nullptr;
                 }
-                debug {
-                    isDebuggable = true
+                if (mSettings) {
+                    delete_fluid_settings(mSettings);
+                    mSettings = nullptr;
                 }
             }
 
-            compileOptions {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
+            bool SF2Engine::startAudio() {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+
+                oboe::AudioStreamBuilder builder;
+                builder.setDirection(oboe::Direction::Output)
+                       ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+                       ->setSharingMode(oboe::SharingMode::Exclusive)
+                       ->setFormat(oboe::AudioFormat::Float)
+                       ->setChannelCount(mChannelCount)
+                       ->setSampleRate(mSampleRate)
+                       ->setDataCallback(this);
+
+                oboe::Result result = builder.openStream(mStream);
+                if (result != oboe::Result::OK) return false;
+
+                mSampleRate = mStream->getSampleRate();
+                if (mSynth) {
+                    fluid_synth_set_sample_rate(mSynth, (float)mSampleRate);
+                }
+
+                result = mStream->requestStart();
+                if (result != oboe::Result::OK) {
+                    mStream->close();
+                    return false;
+                }
+                return true;
             }
 
-            kotlinOptions {
-                jvmTarget = "17"
-            }
-
-            buildFeatures {
-                compose = true
-                prefab = true
-            }
-
-            externalNativeBuild {
-                cmake {
-                    path = file("CMakeLists.txt")
-                    version = "3.22.1"
+            void SF2Engine::stopAudio() {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mStream) {
+                    mStream->stop();
+                    mStream->close();
+                    mStream.reset();
                 }
             }
 
-            packaging {
-                resources {
-                    excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            bool SF2Engine::loadSoundFont(const std::string& path) {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (!mSynth) return false;
+
+                if (mSoundFontId >= 0) {
+                    fluid_synth_sfunload(mSynth, mSoundFontId, 1);
+                    mSoundFontId = -1;
+                }
+
+                mSoundFontId = fluid_synth_sfload(mSynth, path.c_str(), 1);
+                if (mSoundFontId < 0) return false;
+
+                fluid_synth_program_select(mSynth, 0, mSoundFontId, 0, 0);
+                return true;
+            }
+
+            void SF2Engine::unloadSoundFont() {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth && mSoundFontId >= 0) {
+                    fluid_synth_sfunload(mSynth, mSoundFontId, 1);
+                    mSoundFontId = -1;
                 }
             }
-        }
 
-        dependencies {
-            implementation("androidx.core:core-ktx:1.15.0")
-            implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-            implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-            implementation("androidx.activity:activity-compose:1.10.1")
+            void SF2Engine::noteOn(int channel, int key, int velocity) {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth) fluid_synth_noteon(mSynth, channel, key, velocity);
+            }
 
-            val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
-            implementation(composeBom)
-            implementation("androidx.compose.ui:ui")
-            implementation("androidx.compose.ui:ui-graphics")
-            implementation("androidx.compose.ui:ui-tooling-preview")
-            implementation("androidx.compose.material3:material3")
-            implementation("androidx.compose.material:material-icons-extended")
+            void SF2Engine::noteOff(int channel, int key) {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth) fluid_synth_noteoff(mSynth, channel, key);
+            }
 
-            implementation("google.oboe:oboe:1.9.3")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-        }
-        """,
+            void SF2Engine::selectProgram(int channel, int bank, int program) {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth && mSoundFontId >= 0) {
+                    fluid_synth_program_select(mSynth, channel, mSoundFontId, bank, program);
+                }
+            }
 
-            "app/CMakeLists.txt": """cmake_minimum_required(VERSION 3.22.1)
-        project(sf2_player_engine LANGUAGES C CXX)
+            void SF2Engine::setMasterVolume(float volume) {
+                mMasterVolume = volume;
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth) fluid_synth_set_gain(mSynth, volume);
+            }
 
-        set(CMAKE_CXX_STANDARD 17)
-        set(CMAKE_CXX_STANDARD_REQUIRED ON)
+            void SF2Engine::setPolyphony(int polyphony) {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth) fluid_synth_set_polyphony(mSynth, polyphony);
+            }
 
-        find_package(oboe REQUIRED CONFIG)
+            void SF2Engine::allNotesOff() {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                if (mSynth) fluid_synth_all_notes_off(mSynth, 0);
+            }
 
-        include(FetchContent)
-        FetchContent_Declare(
-            fluidlite
-            GIT_REPOSITORY https://github.com/divideconcept/FluidLite.git
-            GIT_TAG master
-        )
-        FetchContent_MakeAvailable(fluidlite)
+            std::vector<PresetInfo> SF2Engine::getPresets() {
+                std::lock_guard<std::mutex> lock(mSynthMutex);
+                std::vector<PresetInfo> result;
+                if (!mSynth || mSoundFontId < 0) return result;
 
-        add_library(sf2engine SHARED
-            src/main/cpp/sf2_engine.cpp
-            src/main/cpp/jni_bridge.cpp
-        )
+                fluid_sfont_t* sfont = fluid_synth_get_sfont_by_id(mSynth, mSoundFontId);
+                if (!sfont) return result;
 
-        target_include_directories(sf2engine PRIVATE
-            ${fluidlite_SOURCE_DIR}/include
-            src/main/cpp
-        )
+                fluid_preset_t preset;
+                fluid_sfont_iteration_start(sfont);
+                while (fluid_sfont_iteration_next(sfont, &preset)) {
+                    PresetInfo info;
+                    info.bank = fluid_preset_get_banknum(&preset);
+                    info.program = fluid_preset_get_num(&preset);
+                    const char* name = fluid_preset_get_name(&preset);
+                    info.name = (name != nullptr) ? std::string(name) : "Preset";
+                    result.push_back(info);
+                }
+                return result;
+            }
 
-        find_library(LOG_LIB log)
-        find_library(OPENSLES_LIB OpenSLES)
-
-        target_link_libraries(sf2engine
-            PRIVATE
-            oboe::oboe
-            fluidlite
-            ${LOG_LIB}
-            ${OPENSLES_LIB}
-        )
-        """,
-
-            "app/src/main/cpp/sf2_engine.h": """#ifndef SF2_ENGINE_H
-        #define SF2_ENGINE_H
-
-        #include <oboe/Oboe.h>
-        #include <fluidlite.h>
-        #include <string>
-        #include <vector>
-        #include <mutex>
-
-        struct PresetInfo {
-            int bank;
-            int program;
-            std::string name;
-        };
-
-        class SF2Engine : public oboe::AudioStreamDataCallback {
-        public:
-            SF2Engine();
-            ~SF2Engine();
-
-            bool startAudio();
-            void stopAudio();
-
-            bool loadSoundFont(const std::string& path);
-            void unloadSoundFont();
-
-            void noteOn(int channel, int key, int velocity);
-            void noteOff(int channel, int key);
-            void selectProgram(int channel, int bank, int program);
-            void setMasterVolume(float volume);
-            void setPolyphony(int polyphony);
-            void allNotesOff();
-
-            std::vector<PresetInfo> getPresets();
-            bool isLoaded() const { return mSoundFontId >= 0; }
-
-            oboe::DataCallbackResult onAudioReady(
+            oboe::DataCallbackResult SF2Engine::onAudioReady(
                 oboe::AudioStream *oboeStream,
                 void *audioData,
-                int32_t numFrames) override;
+                int32_t numFrames) {
 
-        private:
-            std::shared_ptr<oboe::AudioStream> mStream;
-            fluid_settings_t* mSettings{nullptr};
-            fluid_synth_t* mSynth{nullptr};
-            int mSoundFontId{-1};
+                auto *outputBuffer = static_cast<float *>(audioData);
+                std::unique_lock<std::mutex> lock(mSynthMutex, std::try_to_lock);
+                if (!lock.owns_lock() || !mSynth) {
+                    std::memset(outputBuffer, 0, numFrames * mChannelCount * sizeof(float));
+                    return oboe::DataCallbackResult::Continue;
+                }
 
-            int32_t mSampleRate{48000};
-            const int32_t mChannelCount{2};
+                int ret = fluid_synth_write_float(
+                    mSynth,
+                    numFrames,
+                    outputBuffer, 0, 2,
+                    outputBuffer, 1, 2
+                );
 
-            std::mutex mSynthMutex;
-            float mMasterVolume{1.0f};
-        };
-
-        #endif
-        """,
-
-            "app/src/main/cpp/sf2_engine.cpp": """#include "sf2_engine.h"
-        #include <android/log.h>
-        #include <cstring>
-
-        #define TAG "SF2EngineNative"
-        #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-        #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
-
-        SF2Engine::SF2Engine() {
-            mSettings = new_fluid_settings();
-            fluid_settings_setnum(mSettings, "synth.sample-rate", 48000.0);
-            fluid_settings_setint(mSettings, "synth.polyphony", 64);
-            mSynth = new_fluid_synth(mSettings);
-        }
-
-        SF2Engine::~SF2Engine() {
-            stopAudio();
-            if (mSynth) {
-                delete_fluid_synth(mSynth);
-                mSynth = nullptr;
-            }
-            if (mSettings) {
-                delete_fluid_settings(mSettings);
-                mSettings = nullptr;
-            }
-        }
-
-        bool SF2Engine::startAudio() {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-
-            oboe::AudioStreamBuilder builder;
-            builder.setDirection(oboe::Direction::Output)
-                   ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-                   ->setSharingMode(oboe::SharingMode::Exclusive)
-                   ->setFormat(oboe::AudioFormat::Float)
-                   ->setChannelCount(mChannelCount)
-                   ->setSampleRate(mSampleRate)
-                   ->setDataCallback(this);
-
-            oboe::Result result = builder.openStream(mStream);
-            if (result != oboe::Result::OK) return false;
-
-            mSampleRate = mStream->getSampleRate();
-            if (mSynth) {
-                fluid_synth_set_sample_rate(mSynth, (float)mSampleRate);
-            }
-
-            result = mStream->requestStart();
-            if (result != oboe::Result::OK) {
-                mStream->close();
-                return false;
-            }
-            return true;
-        }
-
-        void SF2Engine::stopAudio() {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mStream) {
-                mStream->stop();
-                mStream->close();
-                mStream.reset();
-            }
-        }
-
-        bool SF2Engine::loadSoundFont(const std::string& path) {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (!mSynth) return false;
-
-            if (mSoundFontId >= 0) {
-                fluid_synth_sfunload(mSynth, mSoundFontId, 1);
-                mSoundFontId = -1;
-            }
-
-            mSoundFontId = fluid_synth_sfload(mSynth, path.c_str(), 1);
-            if (mSoundFontId < 0) return false;
-
-            fluid_synth_program_select(mSynth, 0, mSoundFontId, 0, 0);
-            return true;
-        }
-
-        void SF2Engine::unloadSoundFont() {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth && mSoundFontId >= 0) {
-                fluid_synth_sfunload(mSynth, mSoundFontId, 1);
-                mSoundFontId = -1;
-            }
-        }
-
-        void SF2Engine::noteOn(int channel, int key, int velocity) {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth) fluid_synth_noteon(mSynth, channel, key, velocity);
-        }
-
-        void SF2Engine::noteOff(int channel, int key) {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth) fluid_synth_noteoff(mSynth, channel, key);
-        }
-
-        void SF2Engine::selectProgram(int channel, int bank, int program) {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth && mSoundFontId >= 0) {
-                fluid_synth_program_select(mSynth, channel, mSoundFontId, bank, program);
-            }
-        }
-
-        void SF2Engine::setMasterVolume(float volume) {
-            mMasterVolume = volume;
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth) fluid_synth_set_gain(mSynth, volume);
-        }
-
-        void SF2Engine::setPolyphony(int polyphony) {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth) fluid_synth_set_polyphony(mSynth, polyphony);
-        }
-
-        void SF2Engine::allNotesOff() {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            if (mSynth) fluid_synth_all_notes_off(mSynth, 0);
-        }
-
-        std::vector<PresetInfo> SF2Engine::getPresets() {
-            std::lock_guard<std::mutex> lock(mSynthMutex);
-            std::vector<PresetInfo> result;
-            if (!mSynth || mSoundFontId < 0) return result;
-
-            fluid_sfont_t* sfont = fluid_synth_get_sfont_by_id(mSynth, mSoundFontId);
-            if (!sfont) return result;
-
-            fluid_preset_t preset;
-            fluid_sfont_iteration_start(sfont);
-            while (fluid_sfont_iteration_next(sfont, &preset)) {
-                PresetInfo info;
-                info.bank = fluid_preset_get_banknum(&preset);
-                info.program = fluid_preset_get_num(&preset);
-                const char* name = fluid_preset_get_name(&preset);
-                info.name = (name != nullptr) ? std::string(name) : "Preset";
-                result.push_back(info);
-            }
-            return result;
-        }
-
-        oboe::DataCallbackResult SF2Engine::onAudioReady(
-            oboe::AudioStream *oboeStream,
-            void *audioData,
-            int32_t numFrames) {
-
-            auto *outputBuffer = static_cast<float *>(audioData);
-            std::unique_lock<std::mutex> lock(mSynthMutex, std::try_to_lock);
-            if (!lock.owns_lock() || !mSynth) {
-                std::memset(outputBuffer, 0, numFrames * mChannelCount * sizeof(float));
+                if (ret != 0) {
+                    std::memset(outputBuffer, 0, numFrames * mChannelCount * sizeof(float));
+                }
                 return oboe::DataCallbackResult::Continue;
             }
+            """,
 
-            int ret = fluid_synth_write_float(
-                mSynth,
-                numFrames,
-                outputBuffer, 0, 2,
-                outputBuffer, 1, 2
-            );
+            "app/src/main/cpp/jni_bridge.cpp": """
+            #include <jni.h>
+            #include <string>
+            #include "sf2_engine.h"
 
-            if (ret != 0) {
-                std::memset(outputBuffer, 0, numFrames * mChannelCount * sizeof(float));
-            }
-            return oboe::DataCallbackResult::Continue;
-        }
-        """,
+            static SF2Engine* gEngine = nullptr;
 
-            "app/src/main/cpp/jni_bridge.cpp": """#include <jni.h>
-        #include <string>
-        #include "sf2_engine.h"
+            extern "C" {
 
-        static SF2Engine* gEngine = nullptr;
-
-        extern "C" {
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_init(JNIEnv *env, jobject thiz) {
-            if (!gEngine) gEngine = new SF2Engine();
-        }
-
-        JNIEXPORT jboolean JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_start(JNIEnv *env, jobject thiz) {
-            return (gEngine && gEngine->startAudio()) ? JNI_TRUE : JNI_FALSE;
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_stop(JNIEnv *env, jobject thiz) {
-            if (gEngine) gEngine->stopAudio();
-        }
-
-        JNIEXPORT jboolean JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_loadSoundFont(JNIEnv *env, jobject thiz, jstring path) {
-            if (!gEngine) return JNI_FALSE;
-            const char *nativePath = env->GetStringUTFChars(path, nullptr);
-            bool success = gEngine->loadSoundFont(std::string(nativePath));
-            env->ReleaseStringUTFChars(path, nativePath);
-            return success ? JNI_TRUE : JNI_FALSE;
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_unloadSoundFont(JNIEnv *env, jobject thiz) {
-            if (gEngine) gEngine->unloadSoundFont();
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_noteOn(JNIEnv *env, jobject thiz, jint channel, jint key, jint velocity) {
-            if (gEngine) gEngine->noteOn(channel, key, velocity);
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_noteOff(JNIEnv *env, jobject thiz, jint channel, jint key) {
-            if (gEngine) gEngine->noteOff(channel, key);
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_selectProgram(JNIEnv *env, jobject thiz, jint channel, jint bank, jint program) {
-            if (gEngine) gEngine->selectProgram(channel, bank, program);
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_setMasterVolume(JNIEnv *env, jobject thiz, jfloat volume) {
-            if (gEngine) gEngine->setMasterVolume(volume);
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_setPolyphony(JNIEnv *env, jobject thiz, jint polyphony) {
-            if (gEngine) gEngine->setPolyphony(polyphony);
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_allNotesOff(JNIEnv *env, jobject thiz) {
-            if (gEngine) gEngine->allNotesOff();
-        }
-
-        JNIEXPORT jobject JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_getPresets(JNIEnv *env, jobject thiz) {
-            jclass arrayListClass = env->FindClass("java/util/ArrayList");
-            jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
-            jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
-
-            jclass presetClass = env->FindClass("com/mysf2/android/model/Preset");
-            jmethodID presetInit = env->GetMethodID(presetClass, "<init>", "(IILjava/lang/String;)V");
-
-            jobject listObj = env->NewObject(arrayListClass, arrayListInit);
-
-            if (gEngine) {
-                auto presets = gEngine->getPresets();
-                for (const auto& p : presets) {
-                    jstring nameStr = env->NewStringUTF(p.name.c_str());
-                    jobject pObj = env->NewObject(presetClass, presetInit, p.bank, p.program, nameStr);
-                    env->CallBooleanMethod(listObj, arrayListAdd, pObj);
-                    env->DeleteLocalRef(nameStr);
-                    env->DeleteLocalRef(pObj);
-                }
-            }
-            return listObj;
-        }
-
-        JNIEXPORT void JNICALL
-        Java_com_mysf2_android_audio_NativeAudioEngine_destroy(JNIEnv *env, jobject thiz) {
-            if (gEngine) {
-                delete gEngine;
-                gEngine = nullptr;
-            }
-        }
-
-        }
-        """,
-
-            "app/src/main/java/com/mysf2/android/model/Models.kt": """package com.mysf2.android.model
-
-        data class Preset(
-            val bank: Int,
-            val program: Int,
-            val name: String
-        ) {
-            override fun toString(): String = "[$bank:$program] $name"
-        }
-
-        data class SoundFontMeta(
-            val fileName: String,
-            val absolutePath: String,
-            val sizeBytes: Long
-        )
-        """,
-
-            "app/src/main/java/com/mysf2/android/audio/NativeAudioEngine.kt": """package com.mysf2.android.audio
-
-        import com.mysf2.android.model.Preset
-
-        object NativeAudioEngine {
-            init {
-                System.loadLibrary("sf2engine")
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_init(JNIEnv *env, jobject thiz) {
+                if (!gEngine) gEngine = new SF2Engine();
             }
 
-            external fun init()
-            external fun start(): Boolean
-            external fun stop()
-            external fun loadSoundFont(path: String): Boolean
-            external fun unloadSoundFont()
-            external fun noteOn(channel: Int, key: Int, velocity: Int)
-            external fun noteOff(channel: Int, key: Int)
-            external fun selectProgram(channel: Int, bank: Int, program: Int)
-            external fun setMasterVolume(volume: Float)
-            external fun setPolyphony(polyphony: Int)
-            external fun allNotesOff()
-            external fun getPresets(): ArrayList<Preset>
-            external fun destroy()
-        }
-        """,
-
-            "app/src/main/java/com/mysf2/android/audio/SoundFontManager.kt": """package com.mysf2.android.audio
-
-        import android.content.Context
-        import android.net.Uri
-        import android.provider.OpenableColumns
-        import com.mysf2.android.model.SoundFontMeta
-        import kotlinx.coroutines.Dispatchers
-        import kotlinx.coroutines.withContext
-        import java.io.File
-        import java.io.FileOutputStream
-
-        class SoundFontManager(private val context: Context) {
-
-            private val sf2Directory = File(context.filesDir, "soundfonts").apply {
-                if (!exists()) mkdirs()
+            JNIEXPORT jboolean JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_start(JNIEnv *env, jobject thiz) {
+                return (gEngine && gEngine->startAudio()) ? JNI_TRUE : JNI_FALSE;
             }
 
-            suspend fun importSoundFont(uri: Uri): Result<SoundFontMeta> = withContext(Dispatchers.IO) {
-                try {
-                    val fileName = queryFileName(uri) ?: "instrument.sf2"
-                    val targetFile = File(sf2Directory, fileName)
-
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(targetFile).use { output ->
-                            input.copyTo(output, bufferSize = 64 * 1024)
-                        }
-                    } ?: return@withContext Result.failure(Exception("Não foi possível acessar o SF2."))
-
-                    Result.success(
-                        SoundFontMeta(
-                            fileName = fileName,
-                            absolutePath = targetFile.absolutePath,
-                            sizeBytes = targetFile.length()
-                        )
-                    )
-                } catch (e: Exception) {
-                    Result.failure(e)
-                }
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_stop(JNIEnv *env, jobject thiz) {
+                if (gEngine) gEngine->stopAudio();
             }
 
-            private fun queryFileName(uri: Uri): String? {
-                var name: String? = null
-                if (uri.scheme == "content") {
-                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (nameIndex != -1 && cursor.moveToFirst()) {
-                            name = cursor.getString(nameIndex)
-                        }
+            JNIEXPORT jboolean JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_loadSoundFont(JNIEnv *env, jobject thiz, jstring path) {
+                if (!gEngine) return JNI_FALSE;
+                const char *nativePath = env->GetStringUTFChars(path, nullptr);
+                bool success = gEngine->loadSoundFont(std::string(nativePath));
+                env->ReleaseStringUTFChars(path, nativePath);
+                return success ? JNI_TRUE : JNI_FALSE;
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_unloadSoundFont(JNIEnv *env, jobject thiz) {
+                if (gEngine) gEngine->unloadSoundFont();
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_noteOn(JNIEnv *env, jobject thiz, jint channel, jint key, jint velocity) {
+                if (gEngine) gEngine->noteOn(channel, key, velocity);
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_noteOff(JNIEnv *env, jobject thiz, jint channel, jint key) {
+                if (gEngine) gEngine->noteOff(channel, key);
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_selectProgram(JNIEnv *env, jobject thiz, jint channel, jint bank, jint program) {
+                if (gEngine) gEngine->selectProgram(channel, bank, program);
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_setMasterVolume(JNIEnv *env, jobject thiz, jfloat volume) {
+                if (gEngine) gEngine->setMasterVolume(volume);
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_setPolyphony(JNIEnv *env, jobject thiz, jint polyphony) {
+                if (gEngine) gEngine->setPolyphony(polyphony);
+            }
+
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_allNotesOff(JNIEnv *env, jobject thiz) {
+                if (gEngine) gEngine->allNotesOff();
+            }
+
+            JNIEXPORT jobject JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_getPresets(JNIEnv *env, jobject thiz) {
+                jclass arrayListClass = env->FindClass("java/util/ArrayList");
+                jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
+                jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+
+                jclass presetClass = env->FindClass("com/mysf2/android/model/Preset");
+                jmethodID presetInit = env->GetMethodID(presetClass, "<init>", "(IILjava/lang/String;)V");
+
+                jobject listObj = env->NewObject(arrayListClass, arrayListInit);
+
+                if (gEngine) {
+                    auto presets = gEngine->getPresets();
+                    for (const auto& p : presets) {
+                        jstring nameStr = env->NewStringUTF(p.name.c_str());
+                        jobject pObj = env->NewObject(presetClass, presetInit, p.bank, p.program, nameStr);
+                        env->CallBooleanMethod(listObj, arrayListAdd, pObj);
+                        env->DeleteLocalRef(nameStr);
+                        env->DeleteLocalRef(pObj);
                     }
                 }
-                return name ?: uri.lastPathSegment
+                return listObj;
             }
-        }
-        """,
 
-            "app/src/main/java/com/mysf2/android/midi/MidiDeviceManager.kt": """package com.mysf2.android.midi
-
-        import android.content.Context
-        import android.media.midi.MidiDevice
-        import android.media.midi.MidiDeviceInfo
-        import android.media.midi.MidiManager
-        import android.media.midi.MidiOutputPort
-        import android.media.midi.MidiReceiver
-        import android.os.Handler
-        import android.os.Looper
-        import com.mysf2.android.audio.NativeAudioEngine
-
-        class MidiDeviceManager(context: Context) {
-
-            private val midiManager = context.getSystemService(Context.MIDI_SERVICE) as? MidiManager
-            private var openDevice: MidiDevice? = null
-            private var outputPort: MidiOutputPort? = null
-
-            var onDeviceConnected: ((String) -> Unit)? = null
-            var onDeviceDisconnected: (() -> Unit)? = null
-
-            private val midiReceiver = object : MidiReceiver() {
-                override fun onSend(data: ByteArray, offset: Int, count: Int, timestamp: Long) {
-                    var i = offset
-                    val end = offset + count
-                    while (i < end) {
-                        val status = data[i].toInt() and 0xFF
-                        if (status >= 0x80) {
-                            val command = status and 0xF0
-                            val channel = status and 0x0F
-
-                            when (command) {
-                                0x90 -> {
-                                    if (i + 2 < end) {
-                                        val key = data[i + 1].toInt() and 0x7F
-                                        val vel = data[i + 2].toInt() and 0x7F
-                                        if (vel > 0) {
-                                            NativeAudioEngine.noteOn(channel, key, vel)
-                                        } else {
-                                            NativeAudioEngine.noteOff(channel, key)
-                                        }
-                                        i += 3
-                                        continue
-                                    }
-                                }
-                                0x80 -> {
-                                    if (i + 2 < end) {
-                                        val key = data[i + 1].toInt() and 0x7F
-                                        NativeAudioEngine.noteOff(channel, key)
-                                        i += 3
-                                        continue
-                                    }
-                                }
-                            }
-                        }
-                        i++
-                    }
+            JNIEXPORT void JNICALL
+            Java_com_mysf2_android_audio_NativeAudioEngine_destroy(JNIEnv *env, jobject thiz) {
+                if (gEngine) {
+                    delete gEngine;
+                    gEngine = nullptr;
                 }
             }
 
-            fun startListening() {
-                midiManager ?: return
-                val devices = midiManager.devices
-                if (devices.isNotEmpty()) openMidiDevice(devices[0])
-
-                midiManager.registerDeviceCallback(object : MidiManager.DeviceCallback() {
-                    override fun onDeviceAdded(deviceInfo: MidiDeviceInfo) {
-                        openMidiDevice(deviceInfo)
-                    }
-
-                    override fun onDeviceRemoved(deviceInfo: MidiDeviceInfo) {
-                        closeMidiDevice()
-                    }
-                }, Handler(Looper.getMainLooper()))
             }
+            """,
 
-            private fun openMidiDevice(deviceInfo: MidiDeviceInfo) {
-                midiManager?.openDevice(deviceInfo, { device ->
-                    if (device != null) {
-                        openDevice = device
-                        if (deviceInfo.outputPortCount > 0) {
-                            outputPort = device.openOutputPort(0)
-                            outputPort?.connect(midiReceiver)
-                            val devName = deviceInfo.properties.getString(MidiDeviceInfo.PROPERTY_NAME) ?: "Dispositivo MIDI"
-                            onDeviceConnected?.invoke(devName)
-                        }
-                    }
-                }, Handler(Looper.getMainLooper()))
-            }
-
-            fun closeMidiDevice() {
-                try {
-                    outputPort?.close()
-                    openDevice?.close()
-                } catch (_: Exception) {}
-                outputPort = null
-                openDevice = null
-                onDeviceDisconnected?.invoke()
-            }
-        }
-        """,
-
-            "app/src/main/java/com/mysf2/android/ui/AudioViewModel.kt": """package com.mysf2.android.ui
-
-        import android.app.Application
-        import android.net.Uri
-        import androidx.lifecycle.AndroidViewModel
-        import androidx.lifecycle.viewModelScope
-        import com.mysf2.android.audio.NativeAudioEngine
-        import com.mysf2.android.audio.SoundFontManager
-        import com.mysf2.android.midi.MidiDeviceManager
-        import com.mysf2.android.model.Preset
-        import kotlinx.coroutines.flow.MutableStateFlow
-        import kotlinx.coroutines.flow.StateFlow
-        import kotlinx.coroutines.flow.asStateFlow
-        import kotlinx.coroutines.flow.update
-        import kotlinx.coroutines.launch
-
-        data class UiState(
-            val soundFontName: String? = null,
-            val presets: List<Preset> = emptyList(),
-            val selectedPreset: Preset? = null,
-            val masterVolume: Float = 0.8f,
-            val polyphony: Int = 64,
-            val midiDeviceName: String? = null,
-            val isLoading: Boolean = false,
-            val errorMessage: String? = null,
-            val activeKeys: Set<Int> = emptySet()
-        )
-
-        class AudioViewModel(application: Application) : AndroidViewModel(application) {
-
-            private val _uiState = MutableStateFlow(UiState())
-            val uiState: StateFlow<UiState> = _uiState.asStateFlow()
-
-            private val soundFontManager = SoundFontManager(application)
-            private val midiDeviceManager = MidiDeviceManager(application)
-
-            init {
-                NativeAudioEngine.init()
-                NativeAudioEngine.start()
-                NativeAudioEngine.setMasterVolume(0.8f)
-
-                midiDeviceManager.onDeviceConnected = { name ->
-                    _uiState.update { it.copy(midiDeviceName = name) }
-                }
-                midiDeviceManager.onDeviceDisconnected = {
-                    _uiState.update { it.copy(midiDeviceName = null) }
-                }
-                midiDeviceManager.startListening()
-            }
-
-            fun loadSoundFontFromUri(uri: Uri) {
-                viewModelScope.launch {
-                    _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-                    val result = soundFontManager.importSoundFont(uri)
-
-                    result.onSuccess { meta ->
-                        val loaded = NativeAudioEngine.loadSoundFont(meta.absolutePath)
-                        if (loaded) {
-                            val presets = NativeAudioEngine.getPresets()
-                            val defaultPreset = presets.firstOrNull()
-                            if (defaultPreset != null) {
-                                NativeAudioEngine.selectProgram(0, defaultPreset.bank, defaultPreset.program)
-                            }
-
-                            _uiState.update {
-                                it.copy(
-                                    soundFontName = meta.fileName,
-                                    presets = presets,
-                                    selectedPreset = defaultPreset,
-                                    isLoading = false
-                                )
-                            }
-                        } else {
-                            _uiState.update {
-                                it.copy(isLoading = false, errorMessage = "Formato de SoundFont inválido.")
-                            }
-                        }
-                    }.onFailure { error ->
-                        _uiState.update {
-                            it.copy(isLoading = false, errorMessage = error.localizedMessage ?: "Erro ao abrir SoundFont.")
-                        }
-                    }
-                }
-            }
-
-            fun selectPreset(preset: Preset) {
-                NativeAudioEngine.selectProgram(0, preset.bank, preset.program)
-                _uiState.update { it.copy(selectedPreset = preset) }
-            }
-
-            fun setMasterVolume(vol: Float) {
-                NativeAudioEngine.setMasterVolume(vol)
-                _uiState.update { it.copy(masterVolume = vol) }
-            }
-
-            fun noteOn(key: Int, velocity: Int = 100) {
-                NativeAudioEngine.noteOn(0, key, velocity)
-                _uiState.update { it.copy(activeKeys = it.activeKeys + key) }
-            }
-
-            fun noteOff(key: Int) {
-                NativeAudioEngine.noteOff(0, key)
-                _uiState.update { it.copy(activeKeys = it.activeKeys - key) }
-            }
-
-            override fun onCleared() {
-                super.onCleared()
-                midiDeviceManager.closeMidiDevice()
-                NativeAudioEngine.stop()
-                NativeAudioEngine.destroy()
-            }
-        }
-        """,
-
-            "app/src/main/java/com/mysf2/android/ui/components/VirtualKeyboard.kt": """package com.mysf2.android.ui.components
-
-        import androidx.compose.foundation.background
-        import androidx.compose.foundation.border
-        import androidx.compose.foundation.gestures.awaitEachGesture
-        import androidx.compose.foundation.gestures.awaitFirstDown
-        import androidx.compose.foundation.layout.*
-        import androidx.compose.material3.Text
-        import androidx.compose.runtime.*
-        import androidx.compose.ui.Alignment
-        import androidx.compose.ui.Modifier
-        import androidx.compose.ui.graphics.Color
-        import androidx.compose.ui.input.pointer.PointerEventPass
-        import androidx.compose.ui.input.pointer.pointerInput
-        import androidx.compose.ui.unit.dp
-        import androidx.compose.ui.unit.sp
-
-        private val BLACK_KEYS = setOf(1, 3, 6, 8, 10)
-
-        @Composable
-        fun VirtualKeyboard(
-            startNote: Int = 48,
-            totalWhiteKeys: Int = 14,
-            activeNotes: Set<Int>,
-            onNoteOn: (Int) -> Unit,
-            onNoteOff: (Int) -> Unit,
-            modifier: Modifier = Modifier
-        ) {
-            val whiteNotes = remember(startNote, totalWhiteKeys) {
-                val list = mutableListOf<Int>()
-                var curr = startNote
-                while (list.size < totalWhiteKeys) {
-                    val noteInOctave = curr % 12
-                    if (noteInOctave !in BLACK_KEYS) list.add(curr)
-                    curr++
-                }
-                list
-            }
-
-            BoxWithConstraints(
-                modifier = modifier
-                    .fillMaxWidth()
-                    .height(180.dp)
-                    .background(Color(0xFF1A1A1A))
-            ) {
-                val totalWidth = maxWidth
-                val keyWidth = totalWidth / totalWhiteKeys
-
-                Row(modifier = Modifier.fillMaxSize()) {
-                    whiteNotes.forEach { note ->
-                        val isPressed = activeNotes.contains(note)
-                        Box(
-                            modifier = Modifier
-                                .width(keyWidth)
-                                .fillMaxHeight()
-                                .background(if (isPressed) Color(0xFF64B5F6) else Color.White)
-                                .border(1.dp, Color.Black)
-                                .pointerInput(note) {
-                                    awaitEachGesture {
-                                        awaitFirstDown(pass = PointerEventPass.Main)
-                                        onNoteOn(note)
-                                        waitForUpOrCancellation()
-                                        onNoteOff(note)
-                                    }
-                                },
-                            contentAlignment = Alignment.BottomCenter
-                        ) {
-                            if (note % 12 == 0) {
-                                Text(
-                                    text = "C${(note / 12) - 1}",
-                                    fontSize = 11.sp,
-                                    color = Color.DarkGray,
-                                    modifier = Modifier.padding(bottom = 6.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                val blackKeyWidth = keyWidth * 0.65f
-                val blackKeyHeight = maxHeight * 0.6f
-                var currentX = 0.dp
-
-                for (i in 0 until whiteNotes.size - 1) {
-                    val currentNote = whiteNotes[i]
-                    val nextNote = currentNote + 1
-                    currentX += keyWidth
-
-                    if ((nextNote % 12) in BLACK_KEYS) {
-                        val isPressed = activeNotes.contains(nextNote)
-                        val leftOffset = currentX - (blackKeyWidth / 2)
-
-                        Box(
-                            modifier = Modifier
-                                .offset(x = leftOffset)
-                                .width(blackKeyWidth)
-                                .height(blackKeyHeight)
-                                .background(if (isPressed) Color(0xFFE57373) else Color.Black)
-                                .border(1.dp, Color.DarkGray)
-                                .pointerInput(nextNote) {
-                                    awaitEachGesture {
-                                        awaitFirstDown(pass = PointerEventPass.Main)
-                                        onNoteOn(nextNote)
-                                        waitForUpOrCancellation()
-                                        onNoteOff(nextNote)
-                                    }
-                                }
-                        )
-                    }
-                }
-            }
-        }
-        """,
-
-            "app/src/main/java/com/mysf2/android/ui/MainScreen.kt": """package com.mysf2.android.ui
-
-        import android.net.Uri
-        import androidx.activity.compose.rememberLauncherForActivityResult
-        import androidx.activity.result.contract.ActivityResultContracts
-        import androidx.compose.foundation.layout.*
-        import androidx.compose.material.icons.Icons
-        import androidx.compose.material.icons.filled.Audiotrack
-        import androidx.compose.material.icons.filled.FolderOpen
-        import androidx.compose.material.icons.filled.Usb
-        import androidx.compose.material3.*
-        import androidx.compose.runtime.*
-        import androidx.compose.ui.Alignment
-        import androidx.compose.ui.Modifier
-        import androidx.compose.ui.graphics.Color
-        import androidx.compose.ui.unit.dp
-        import com.mysf2.android.ui.components.VirtualKeyboard
-
-        @OptIn(ExperimentalMaterial3Api::class)
-        @Composable
-        fun MainScreen(viewModel: AudioViewModel) {
-            val uiState by viewModel.uiState.collectAsState()
-            val sf2Picker = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.OpenDocument()
-            ) { uri: Uri? -> uri?.let { viewModel.loadSoundFontFromUri(it) } }
-
-            var expandedPresetDropdown by remember { mutableStateOf(false) }
-
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text("SF2 Player") },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        actions = {
-                            uiState.midiDeviceName?.let { deviceName ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(end = 8.dp)
-                                ) {
-                                    Icon(Icons.Default.Usb, contentDescription = "MIDI", tint = Color(0xFF4CAF50))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(deviceName, style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                            IconButton(onClick = { sf2Picker.launch(arrayOf("*/*")) }) {
-                                Icon(Icons.Default.FolderOpen, contentDescription = "Carregar SF2")
-                            }
-                        }
-                    )
-                }
-            ) { innerPadding ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Audiotrack, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = uiState.soundFontName ?: "Nenhum SoundFont carregado",
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                }
-
-                                Spacer(Modifier.height(10.dp))
-
-                                ExposedDropdownMenuBox(
-                                    expanded = expandedPresetDropdown,
-                                    onExpandedChange = { expandedPresetDropdown = !expandedPresetDropdown }
-                                ) {
-                                    OutlinedTextField(
-                                        value = uiState.selectedPreset?.toString() ?: "Selecione o Instrumento",
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Instrumento SF2") },
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPresetDropdown) },
-                                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                                    )
-
-                                    ExposedDropdownMenu(
-                                        expanded = expandedPresetDropdown,
-                                        onDismissRequest = { expandedPresetDropdown = false }
-                                    ) {
-                                        uiState.presets.forEach { preset ->
-                                            DropdownMenuItem(
-                                                text = { Text(preset.toString()) },
-                                                onClick = {
-                                                    viewModel.selectPreset(preset)
-                                                    expandedPresetDropdown = false
-                                                }
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(Modifier.height(12.dp))
-
-                                Text(
-                                    text = "Volume Master: ${(uiState.masterVolume * 100).toInt()}%",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Slider(
-                                    value = uiState.masterVolume,
-                                    onValueChange = { viewModel.setMasterVolume(it) },
-                                    valueRange = 0f..1.5f
-                                )
-                            }
-                        }
-
-                        if (uiState.isLoading) {
-                            Spacer(Modifier.height(10.dp))
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
-
-                        uiState.errorMessage?.let { error ->
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = error,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-
-                    Column {
-                        VirtualKeyboard(
-                            startNote = 48,
-                            totalWhiteKeys = 14,
-                            activeNotes = uiState.activeKeys,
-                            onNoteOn = { note -> viewModel.noteOn(note) },
-                            onNoteOff = { note -> viewModel.noteOff(note) }
-                        )
-                    }
-                }
-            }
-        }
-        """,
-
-            "app/src/main/java/com/mysf2/android/MainActivity.kt": """package com.mysf2.android
-
-        import android.os.Bundle
-        import androidx.activity.ComponentActivity
-        import androidx.activity.compose.setContent
-        import androidx.activity.viewModels
-        import androidx.compose.foundation.layout.fillMaxSize
-        import androidx.compose.material3.MaterialTheme
-        import androidx.compose.material3.Surface
-        import androidx.compose.ui.Modifier
-        import com.mysf2.android.ui.AudioViewModel
-        import com.mysf2.android.ui.MainScreen
-
-        class MainActivity : ComponentActivity() {
-
-            private val audioViewModel: AudioViewModel by viewModels()
-
-            override fun onCreate(savedInstanceState: Bundle?) {
-                super.onCreate(savedInstanceState)
-                setContent {
-                    MaterialTheme {
-                        Surface(
-                            modifier = Modifier.fillMaxSize(),
-                            color = MaterialTheme.colorScheme.background
-                        ) {
-                            MainScreen(viewModel = audioViewModel)
-                        }
-                    }
-                }
-            }
-        }
-        """,
-
-            "app/src/main/AndroidManifest.xml": """<?xml version="1.0" encoding="utf-8"?>
-        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-            <uses-feature android:name="android.hardware.audio.low_latency" android:required="false" />
-            <uses-feature android:name="android.hardware.audio.pro" android:required="false" />
-            <uses-feature android:name="android.hardware.midi" android:required="true" />
-            <uses-feature android:name="android.hardware.usb.host" android:required="false" />
-
-            <application
-                android:allowBackup="false"
-                android:icon="@android:drawable/ic_media_play"
-                android:label="SF2 Player"
-                android:roundIcon="@android:drawable/ic_media_play"
-                android:supportsRtl="true"
-                android:theme="@android:style/Theme.Material.NoActionBar">
-
-                <activity
-                    android:name=".MainActivity"
-                    android:exported="true"
-                    android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-                    android:screenOrientation="sensorLandscape">
-                    <intent-filter>
-                        <action android:name="android.intent.action.MAIN" />
-                        <category android:name="android.intent.category.LAUNCHER" />
-                    </intent-filter>
-                </activity>
-
-            </application>
-
-        </manifest>
-        """
-        }
-
-        # Cria a arvore de pastas e arquivos no servidor do GitHub
-        for path, content in files.items():
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-        # Compacta tudo dentro de um arquivo ZIP completo do projeto
-        with zipfile.ZipFile("SF2Player-ProjetoCompleto.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
-            for path in files.keys():
-                zipf.write(path)
-
-        print("Arquivos criados e ZIP empacotado com sucesso!")
-        EOF
-
-    - name: Disponibilizar o arquivo ZIP para Download
-      uses: actions/upload-artifact@v4
-      with:
-        name: SF2Player-CodigoFonte-ZIP
-        path: SF2Player-ProjetoCompleto.zip
-
-    - name: Configurar Java 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Configurar Android NDK
-      uses: nttld/setup-ndk@v1
-      with:
-        ndk-version: r26d
-
-    - name: Instalar Gradle e Compilar o APK
-      uses: gradle/actions/setup-gradle@v4
-      with:
-        gradle-version: '8.11.1'
-
-    - name: Compilar APK (assembleDebug)
-      run: gradle assembleDebug --stacktrace
-
-    - name: Disponibilizar o APK Instalavel para Download
-      uses: actions/upload-artifact@v4
-      with:
-        name: SF2Player-APK-Instalador
-        path: app/build/outputs/apk/debug/app-debug.apk
+            "app/src/main/java/com/mysf2/android/m
